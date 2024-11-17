@@ -22,8 +22,8 @@ do
     	sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
     
     	#run dfts
-    	sbatch run.sh
-    	#sbatch --partition=preemptable --qos=preemptable run.sh
+    	#sbatch run.sh
+    	sbatch --partition=preemptable --qos=preemptable run.sh
     	sleep 2
     	cd -
     fi
