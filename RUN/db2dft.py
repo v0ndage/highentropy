@@ -39,7 +39,11 @@ ISYM = 0
 ALGO = Normal
 
 METAGGA = R2SCAN
+LUSE_VDW = .TRUE.
+BPARAM = 11.95 #recommendation
+CPARAM = 0.0093
 LASPH = .TRUE.
+
 LMAXTAU = 6
 LDIPOL = .TRUE.
 DIPOL = 0.5 0.5 0.5
@@ -53,13 +57,9 @@ Gamma
 0 0 0
 """
 
-iter = int(sys.argv[2])
-
-indices = np.load('DBs/miss-'+str(iter)+'.npy')
-
-for i in range(len(indices)):
+for i in range(len(db)):
 	
-	cluster = images[int(indices[i])]
+	cluster = images[i]
 	stoi = cluster.get_chemical_symbols()
 	z, c = np.unique(stoi, return_counts=True)
 
@@ -68,7 +68,7 @@ for i in range(len(indices)):
 
 	NEW = INCAR.replace('ZZZ', ' '.join(line))
 
-	newpath = 'DFTs/'+str(int(indices[i])+1)+'/'
+	newpath = 'DFTs/'+str(i+1)+'/'
 	if not os.path.exists(newpath): os.makedirs(newpath)
 
 	with open(os.path.join(newpath, 'INCAR'), 'w') as incar:
