@@ -21,33 +21,25 @@ LCHARG = .FALSE.
 LWAVE  = .FALSE.
 LREAL = Auto
 
-NCORE= 4
+NCORE = 8
 PREC = Accurate
-ENCUT = 500
 ISMEAR = 0
 
 ISPIN = 2
 MAGMOM = ZZZ
 
-IBRION = -1
-NSW = 0
-NELM = 100
-EDIFF = 1E-6
-SIGMA = 0.01
+IBRION = 2
+NSW = 50
+NELM = 50
+EDIFF = 1E-3
+EDIFFG = -5E-3
 
-ISYM = 0
-ALGO = Normal
+ALGO = ov
 
 METAGGA = R2SCAN
 LUSE_VDW = .TRUE.
-BPARAM = 11.95 #recommendation
-CPARAM = 0.0093
 LASPH = .TRUE.
-
-LMAXTAU = 6
-LDIPOL = .TRUE.
-DIPOL = 0.5 0.5 0.5
-IDIPOL = 4
+BPARAM = 11.95
 """
 
 kpoints = """K-Points
@@ -55,6 +47,23 @@ kpoints = """K-Points
 Gamma
 1 1 1
 0 0 0
+"""
+
+runscript = """#!/usr/bin/env bash
+#SBATCH --account=akara
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=32
+#SBATCH --time=10:00:00
+#SBATCH --mem-per-cpu=8000
+#SBATCH --error=%J.err
+#SBATCH --output=%J.out
+#SBATCH --job-name=NN
+
+ml vasp/vasp-6.4.2-oneapi-2023.1.0
+#module load vasp/vasp-5.4.4-oneapi-2023.1.0-WITH-PATCHES
+mpirun vasp_std > job_output
+
+##
 """
 
 for i in range(len(db)):
@@ -71,11 +80,14 @@ for i in range(len(db)):
 	newpath = 'DFTs/'+str(i+1)+'/'
 	if not os.path.exists(newpath): os.makedirs(newpath)
 
-	with open(os.path.join(newpath, 'INCAR'), 'w') as incar:
-		incar.write(NEW)
+	with open(os.path.join(newpath, 'INCAR'), 'w') as f:
+		f.write(NEW)
 	
-	with open(os.path.join(newpath, 'KPOINTS'), 'w') as incar:
-		incar.write(kpoints)
+	with open(os.path.join(newpath, 'KPOINTS'), 'w') as f:
+		f.write(kpoints)
+
+	with open(os.path.join(newpath, 'run.sh'), 'w') as f:
+		f.write(runscript)
 
 	index = np.sort(np.unique(stoi, return_index=True)[1])
 	elements = [stoi[i] for i in index]
