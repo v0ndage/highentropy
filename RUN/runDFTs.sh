@@ -14,15 +14,12 @@ cd DFTs/
 
 for ((i=$START; i<=$STOP; i++));
 do
-    #make and enter n DFT dirs
-    if cd "$i"; then
-	#cp -r ../../run.sh .
-    	sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
-    	#sbatch run.sh
-    	sbatch --partition=preemptable --qos=preemptable run.sh
-    	sleep 2
-    	cd -
-    fi
+        cd $i/
+        sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
+        #sbatch run.sh
+        sbatch --partition=preemptable --qos=preemptable run.sh
+        sleep 4
+        cd ../
 done
 cd ../
 
