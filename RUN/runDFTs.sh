@@ -17,19 +17,21 @@ cd DFT$1/
 
 for ((i=$START; i<=$STOP; i++));
 do
-	# make and enter n DFT dirs
-	cd $i/
-	
-	if [ ! -f "OUTCAR" ]; then
+	# enter only if dir exist
+	if [[ -d "$i" ]]; then
+		cd $i/
 		
-		# run dfts 
-		sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
-		#sbatch run.sh
-		sbatch --partition=preemptable --qos=preemptable run.sh
-		sleep 2
-	fi
+		if [ ! -f "OUTCAR" ]; then
+			
+			# run dfts 
+			sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
+			#sbatch run.sh
+			sbatch --partition=preemptable --qos=preemptable run.sh
+			sleep 2
+		fi
 
-	cd ../
+		cd ../
+	fi
 done
 cd ../
 
