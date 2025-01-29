@@ -8,6 +8,10 @@
 #SBATCH --output=%J.out
 #SBATCH --job-name=rerun
 
+# Checks a set of outcars for completion
+# ignores those without outcars,
+# fixes Zbrent / frozen error, and re-submits.
+
 C=$1
 START=$2
 STOP=$3
