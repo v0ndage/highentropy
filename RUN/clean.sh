@@ -7,25 +7,23 @@
 #SBATCH --output=%J.out
 #SBATCH --job-name=clean
 
+# Saves only converged outcars
+# and removes their directory.
+
 C=$1
 START=$2
 STOP=$3
 
-cd DFTs/
+cd DFT$C/
 mkdir SAVE$C
 
 for ((i=$START; i<=$STOP; i++));
 do
-	cp $i/OUTCAR SAVE$C/$i.OUTCAR
-	#cp $i/DOSCAR SAVE$C/$i.DOSCAR
-	rm -r $i
+	if grep -q "required" "$i/OUTCAR"; then
+		cp $i/OUTCAR SAVE$C/$i.OUTCAR
+		rm -r $i
+	fi
 done
 cd ../
 
-rm *err
-rm *out
-rm waitlist
-rm outfiles/*
-exit 1
-
-
+###
