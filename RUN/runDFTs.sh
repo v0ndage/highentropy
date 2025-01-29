@@ -7,19 +7,29 @@
 #SBATCH --output=%J.out
 #SBATCH --job-name=DFT
 
-START=$1
-STOP=$2
+# Runs set of jobs iff no outcar present
 
-cd DFTs/
+ITER=$1
+START=$2
+STOP=$3
+
+cd DFT$1/
 
 for ((i=$START; i<=$STOP; i++));
 do
-        cd $i/
-        sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
-        #sbatch run.sh
-        sbatch --partition=preemptable --qos=preemptable run.sh
-        sleep 4
-        cd ../
+	# make and enter n DFT dirs
+	cd $i/
+	
+	if [ ! -f "OUTCAR" ]; then
+		
+		# run dfts 
+		sed -i "/--job-name/,//s/NN/DFT-$i/" run.sh
+		#sbatch run.sh
+		sbatch --partition=preemptable --qos=preemptable run.sh
+		sleep 2
+	fi
+
+	cd ../
 done
 cd ../
 
