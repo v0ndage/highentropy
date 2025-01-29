@@ -25,26 +25,26 @@ do
 
 	# check job
 	if [[ -f "OUTCAR" ]]; then
-
+		
 		# at least one iteration (otherwise presumed stuck)
 		if grep -q "LOOP" "OUTCAR"; then
-
+			
 			# check completion
 			if grep -q "required" "OUTCAR"; then
 				echo "$i done"
 				cd ..
 				continue
-
+				
 			# check error
 			elif grep -q "ZBRENT" "OUTCAR"; then
 				echo "$i error"
 				#improve resolution
 				sed -i 's/^EDIFF *=.*/EDIFF = 5E-4/' "INCAR"
-
+				
 			else
 				echo "$i undone"
 			fi
-
+			
 		else
 			# find and cancel jobs that are presumed stuck
 			for file in *.err; do
@@ -56,14 +56,14 @@ do
 				fi
 			done
 		fi
-
+		
 		# rerun job
 		mv "POSCAR" "POS1"
 		mv "OUTCAR" "OUT1"
 		mv "CONTCAR" "POSCAR"
 		sed -i 's/^ISTART *=.*/ISTART = 1/' "INCAR"
 		sed -i 's/^ICHARG *=.*/ICHARG = 0/' "INCAR"
-
+		
 		echo "running $i"
 		#sbatch run.sh
 		sbatch --partition=preemptable --qos=preemptable run.sh
@@ -77,3 +77,4 @@ do
 
 done
 cd ../
+###
