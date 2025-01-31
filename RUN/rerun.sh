@@ -12,12 +12,12 @@
 # ignores those without outcars,
 # fixes Zbrent / frozen error, and re-submits.
 
-C=$1
+ITER=$1
 START=$2
 STOP=$3
 
-cd DFT$C/
-mkdir SAVE$C
+cd DFT$ITER/
+mkdir SAVE$ITER
 
 for ((i=$START; i<=$STOP; i++));
 do
