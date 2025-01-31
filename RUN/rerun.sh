@@ -42,7 +42,7 @@ do
 				elif grep -q "ZBRENT" "OUTCAR"; then
 					echo "$i error"
 					#improve resolution
-					sed -i 's/^EDIFF *=.*/EDIFF = 5E-4/' "INCAR"
+					sed -i 's/^EDIFF *=.*/EDIFF = 2E-4/' "INCAR"
 
 				else
 					echo "$i undone"
@@ -53,12 +53,12 @@ do
 				for file in *.err; do
 					if [[ -f "$file" ]]; then
 						jobID=$(basename "$file" .err)
-						echo "$i canceled"
 						scancel "$jobID"
-						rm OUTCAR
 					fi
 				done
-			fi
+				echo "$i canceled"
+				rm OUTCAR
+   			fi
 
 			# rerun job
 			mv "POSCAR" "POS1"
