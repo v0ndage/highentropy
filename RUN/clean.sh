@@ -10,17 +10,17 @@
 # Saves only converged outcars
 # and removes their directory.
 
-C=$1
+ITER=$1
 START=$2
 STOP=$3
 
-cd DFT$C/
-mkdir SAVE$C
+cd DFT$ITER/
+mkdir SAVE$ITER
 
 for ((i=$START; i<=$STOP; i++));
 do
 	if grep -q "required" "$i/OUTCAR"; then
-		cp $i/OUTCAR SAVE$C/$i.OUTCAR
+		cp $i/OUTCAR SAVE$ITER/$i.OUTCAR
 		rm -r $i
 	fi
 done
