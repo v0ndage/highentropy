@@ -8,7 +8,7 @@ from ase.constraints import FixAtoms, FixBondLengths
 #This is a starting point for relaxations
 #After convergence, constraints should be tightened.
 
-C = sys.argv[1]
+ITER = sys.argv[1]
 DB = sys.argv[2]
 
 db = connect(DB)
