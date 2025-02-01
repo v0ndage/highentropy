@@ -37,17 +37,23 @@ do
 					echo "$i done"
 					cd ..
 					continue
+				fi
 
 				# check error
-				elif grep -q "ZBRENT" "OUTCAR"; then
+				if grep -q "ZBRENT" "OUTCAR"; then
 					echo "$i error"
 					#improve resolution
 					sed -i 's/^EDIFF *=.*/EDIFF = 2E-4/' "INCAR"
-
-				else
-					echo "$i undone"
 				fi
 
+				# update job iff contcar exists (as it should here)
+				if [ -e "CONTCAR" ]; then
+					mv "POSCAR" "POS1"
+					mv "OUTCAR" "OUT1"
+					mv "CONTCAR" "POSCAR"
+					sed -i 's/^ISTART *=.*/ISTART = 1/' "INCAR"
+					sed -i 's/^ICHARG *=.*/ICHARG = 0/' "INCAR"
+				fi
 			else
 				# find and cancel jobs that are presumed stuck
 				for file in *.err; do
@@ -58,15 +64,9 @@ do
 				done
 				echo "$i canceled"
 				rm OUTCAR
-   			fi
+			fi
 
-			# rerun job
-			mv "POSCAR" "POS1"
-			mv "OUTCAR" "OUT1"
-			mv "CONTCAR" "POSCAR"
-			sed -i 's/^ISTART *=.*/ISTART = 1/' "INCAR"
-			sed -i 's/^ICHARG *=.*/ICHARG = 0/' "INCAR"
-
+			# re-run job
 			echo "running $i"
 			#sbatch run.sh
 			sbatch --partition=preemptable --qos=preemptable run.sh
