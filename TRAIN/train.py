@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Basic training with SchnetPack
+# Basic training with SchNetPack: https://schnetpack.readthedocs.io/en/latest/
 # All work is done in local programs.py file
 # Here we simply initialize, and train
 # Plotting functions are optional
