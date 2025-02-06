@@ -24,6 +24,8 @@ study.optimize(objective, n_trials=50,  n_jobs=1)
 
 Both the OPT and main TRAIN directories utilize programs.py to implement SchNetPack models.
 
+See here for what we are doing: https://schnetpack.readthedocs.io/en/latest/tutorials/tutorial_03_force_models.html
+
 After initializing hyperparameters, the basic training proceedure is this:
 
 ```
