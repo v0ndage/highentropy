@@ -21,3 +21,19 @@ It is iterated like this
 study = optuna.create_study(direction='minimize')
 study.optimize(objective, n_trials=50,  n_jobs=1)
 ```
+
+Both the OPT and main TRAIN directories utilize programs.py to implement SchNetPack models.
+
+After initializing hyperparameters, the basic training proceedure is this:
+
+```
+dm = myModule(directory, images, batch_size)
+task = myModel(parameters, scheduler)
+trainer = myTrainer(directory, epochs)
+trainer.fit(task, datamodule=dm)
+```
+All functions starting with 'my' are defined in programs.py
+
+The rest is simply utility functions and plotting functions.
+
+##END
