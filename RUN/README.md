@@ -1,9 +1,12 @@
 ## Example Usage:
 
->### sbatch script db2dft.py DBs/2-H.db
+Note 'iter' can be a number or a name,
+but it is expected that there exists a DFT$iter directory.
+
+```sbatch script iter db2dft.py DBs/2-H.db```
 ### wait till files are created
->### sbatch runDFTs.sh 1 100
+```sbatch runDFTs.sh iter 1 100```
 ### jobs should run
->### sbatch clean.sh 2 1 100
+```sbatch clean.sh iter 1 100```
 
 etc.
