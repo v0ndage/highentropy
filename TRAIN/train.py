@@ -129,6 +129,7 @@ deltaplot(name, 'energy', testE[0], testE[1], title, save)
 histoplot(name, 'energy', testE[0], testE[1], title, save)
 histoplot(name, 'force', testF[0], testF[1], title, save)
 barplot(name, MAEs, save)
+trainplot(name, save)
 
 ###------------------------------------------
 ### OUTPUT
