@@ -298,7 +298,8 @@ def myModel(parameters, scheduler):
 def myTrainer(directory, epochs):
 	
 	#Assign logs
-	logger = pl.loggers.TensorBoardLogger(save_dir=directory)
+	#logger = pl.loggers.TensorBoardLogger(save_dir=directory)
+	csv_logger = pl.loggers.CSVLogger(save_dir=directory, name='csv_logs')
 	callbacks = [
 		spk.train.ModelCheckpoint(
 			model_path=os.path.join(directory, 'best_inference_model'),
@@ -313,7 +314,7 @@ def myTrainer(directory, epochs):
 		devices=1, #switch to cores available
 		accelerator='gpu' if torch.cuda.is_available() else 'cpu',
 		callbacks=callbacks,
-		logger=logger,
+		logger=csv_logger,
 		log_every_n_steps=10,
 		default_root_dir=directory,
 		max_epochs=epochs,
