@@ -368,6 +368,32 @@ def stoiPlots(Stois, name):
 	plt.savefig(name+'.png', dpi=200, bbox_inches='tight')
 	plt.clf()
 
+def trainplot(name, save=False):
+
+	data = pd.read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
+	data.fillna(method='ffill', inplace=True)
+	
+	fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
+	
+	labs = ['Loss', 'Energy MAE', 'Forces MAE']
+	subs = [['valid', 'b'], ['train', 'r']]
+	for i in range(3):
+		ax = axes[i]
+		for j in range(2):
+			final = np.round(data[data.columns[i+j*5]].iloc[-1], 3)
+			ax.plot(data['epoch'][10:], data[data.columns[i+j*5]][10:], 
+					label=subs[j][0]+' : '+str(final), c=subs[j][1], alpha=0.75)
+		ax.set_ylabel(labs[i])
+		ax.legend(loc='upper left')
+		ax.grid(ls=':')
+	
+	plt.xlabel('epoch')
+	plt.tight_layout(pad=1)
+	
+	if save: plt.savefig('NNs/'+name+'/train.png')
+	else: plt.show()
+	plt.clf()
+
 def barplot(name, measures, save=False):
 
 	Max = np.max(measures)
