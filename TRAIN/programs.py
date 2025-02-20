@@ -2,13 +2,20 @@
 
 import os, time
 import torch, torchmetrics
-import schnetpack as spk
+import torch.distributed as dist
+
 import pytorch_lightning as pl
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
+
+import schnetpack as spk
 from schnetpack.data import ASEAtomsData, AtomsDataModule
 
 import numpy as np
+from pandas import read_csv
+
 import matplotlib.pyplot as plt
 from matplotlib.cm import ScalarMappable
+import matplotlib.ticker as ticker
 from scipy.stats import gaussian_kde, lognorm
 from scipy.spatial.transform import Rotation
 from collections.abc import Iterable
@@ -121,11 +128,6 @@ def prune(images, decimals):
 	print(len(images)-len(valid), 'energies pruned out of', len(images))
 	return valid
 
-
-###------------------------------------------
-### SCHNET FUNCTIONS
-###------------------------------------------
-
 def LoadSchNetCalc(directory):
 
 	calculator = spk.interfaces.SpkCalculator(
@@ -190,11 +192,38 @@ def compare(directory, images, limit):
 	
 	return measures
 
-def myModule(directory, images, bs):
+###------------------------------------------
+### SCHNET TRAINING FUNCTIONS
+###------------------------------------------
 
-	#First convert images to ASEAtomsData
-	try: os.remove(os.path.join(directory, 'new_dataset.db'))
-	except: pass
+def wait4db(file_path, stability_time=10, check_interval=1, timeout=5*60):
+
+	t0 = time.time()
+	last_size = -1
+	stable_start = None
+
+	while True:
+		if os.path.exists(file_path):
+			current_size = os.path.getsize(file_path)
+			if current_size == last_size:
+				if stable_start is None:
+					stable_start = time.time()
+				elif time.time() - stable_start >= stability_time:
+					print(f"File {file_path} is stable.")
+					return
+			else:
+				last_size = current_size
+				stable_start = None
+		if time.time() - t0 > timeout:
+			raise TimeoutError(f"File {file_path} did not stabilize within {timeout} s")
+		time.sleep(check_interval)
+
+@rank_zero_only
+def create_database(directory, images):
+
+	new_path = os.path.join(directory, 'new_dataset.db')
+	try: os.remove(new_path)
+	except Exception: pass
 
 	property_list = []
 	for i in images:
@@ -203,61 +232,52 @@ def myModule(directory, images, bs):
 		property_list.append({'energy': energy, 'forces': forces})
 
 	new_dataset = ASEAtomsData.create(
-		os.path.join(directory, 'new_dataset.db'), 
+		new_path, 
 		distance_unit='Ang',
 		property_unit_dict={'energy': 'eV', 'forces': 'eV/Ang'},
 	)
-
 	new_dataset.add_systems(property_list, images)
+	print("[Rank 0] Database created.")
 
-	#Now wrap AtomsData in DataModule class
+def build_datamodule(directory, images, bs, co, prepare=True):
+
+	new_path = os.path.join(directory, 'new_dataset.db')
 	DM = AtomsDataModule(
-		os.path.join(directory, 'new_dataset.db'),
-		split_file = os.path.join(directory, 'split.npz'),
-		batch_size=bs, val_batch_size=bs, test_batch_size=bs,
+		new_path,
+		split_file=os.path.join(directory, 'split.npz'),
+		batch_size=bs, 
+		val_batch_size=bs, 
+		test_batch_size=bs,
 		num_train=int(0.7*len(images)), 
 		num_val=int(0.15*len(images)), 
 		num_test=int(0.15*len(images)),
-		load_properties = ['energy', 'forces'],
+		load_properties=['energy', 'forces'],
 		transforms=[
-			spk.transform.ASENeighborList(cutoff=5.2),
+			spk.transform.ASENeighborList(cutoff=co),
 			spk.transform.RemoveOffsets('energy', remove_mean=True, remove_atomrefs=False),
 			spk.transform.CastTo32()
 		],
-		num_workers=0, #cores, may have to manually adjust
+		num_workers=2, #may require manual adjustment
 		pin_memory=True if torch.cuda.is_available() else False,
 	)
-
-	DM.prepare_data()
+	if prepare: DM.prepare_data()
 	DM.setup()
-
+	print(f"[Rank {os.environ.get('LOCAL_RANK', 0)}] DataModule set up.")
 	return DM
 
 def myModel(parameters, scheduler):
 	
-	#Parameterize
-	lr = parameters['learning_rate']
-	cutoff = parameters['cut_off']
-	features = parameters['features']
-	interactions = parameters['interactions']
-	gaussians = parameters['gaussians']
-	e_weight = parameters['energy_weight']
-	f_weight = parameters['force_weight']
-	
-	#Build model
-	radial_basis = spk.nn.GaussianRBF(n_rbf=gaussians, cutoff=cutoff)
+	radial_basis = spk.nn.GaussianRBF(n_rbf=parameters['gaussians'], cutoff=parameters['cut_off'])
 	schnet = spk.representation.SchNet(
-		n_atom_basis=features, 
-		n_interactions=interactions,
+		n_atom_basis=parameters['features'], 
+		n_interactions=parameters['interactions'],
 		radial_basis=radial_basis,
-		cutoff_fn=spk.nn.CosineCutoff(cutoff)
+		cutoff_fn=spk.nn.CosineCutoff(parameters['cut_off'])
 	)
 	
-	#Assign training features
-	pred_energy = spk.atomistic.Atomwise(n_in=features, output_key='energy')
+	pred_energy = spk.atomistic.Atomwise(n_in=parameters['features'], output_key='energy')
 	pred_forces = spk.atomistic.Forces(energy_key='energy', force_key='forces')
 	
-	#Build potential
 	nnpot = spk.model.NeuralNetworkPotential(
 		representation=schnet,
 		input_modules=[spk.atomistic.PairwiseDistances()],
@@ -268,37 +288,31 @@ def myModel(parameters, scheduler):
 		]
 	)
 	
-	#Define loss weights for features
 	output_energy = spk.task.ModelOutput(
 		name='energy',
 		loss_fn=torch.nn.MSELoss(),
-		loss_weight=e_weight,
+		loss_weight=parameters['energy_weight'],
 		metrics={"MAE": torchmetrics.MeanAbsoluteError()}
 	)
 	output_forces = spk.task.ModelOutput(
-					name='forces',
-					loss_fn=torch.nn.MSELoss(),
-					loss_weight=f_weight,
-					metrics={"MAE": torchmetrics.MeanAbsoluteError()}
-				)
+		name='forces',
+		loss_fn=torch.nn.MSELoss(),
+		loss_weight=parameters['force_weight'],
+		metrics={"MAE": torchmetrics.MeanAbsoluteError()}
+	)
 	
-	#Define task
 	task = spk.task.AtomisticTask(
 		model=nnpot,
 		outputs=[output_energy, output_forces],
 		optimizer_cls=torch.optim.AdamW,
-		optimizer_args={'lr': lr},
+		optimizer_args={'lr': parameters['learning_rate']},
 		scheduler_cls=scheduler['s_class'],
 		scheduler_monitor=scheduler['s_metric'],
 		scheduler_args=scheduler['s_args'],
 	)
-
 	return task
 
 def myTrainer(directory, epochs):
-	
-	#Assign logs
-	#logger = pl.loggers.TensorBoardLogger(save_dir=directory)
 	csv_logger = pl.loggers.CSVLogger(save_dir=directory, name='csv_logs')
 	callbacks = [
 		spk.train.ModelCheckpoint(
@@ -309,17 +323,18 @@ def myTrainer(directory, epochs):
 		pl.callbacks.EarlyStopping(monitor='val_loss', patience=200),
 	]
 
-	#Define trainer
 	trainer = pl.Trainer(
-		devices=1, #switch to cores available
 		accelerator='gpu' if torch.cuda.is_available() else 'cpu',
+		devices=torch.cuda.device_count(),
+		num_nodes=int(os.getenv("SLURM_NNODES", 2)),
+		strategy='ddp',
+		precision=16,
 		callbacks=callbacks,
 		logger=csv_logger,
 		log_every_n_steps=10,
 		default_root_dir=directory,
 		max_epochs=epochs,
 	)
-	
 	return trainer
 
 ###------------------------------------------
@@ -369,31 +384,40 @@ def stoiPlots(Stois, name):
 	plt.savefig(name+'.png', dpi=200, bbox_inches='tight')
 	plt.clf()
 
+import matplotlib.ticker as ticker
+
 def trainplot(name, save=False):
 
-	data = pd.read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
+    format = ticker.FormatStrFormatter('%.3f')
+
+    data = read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
 	data.fillna(method='ffill', inplace=True)
-	
-	fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
-	
-	labs = ['Loss', 'Energy MAE', 'Forces MAE']
-	subs = [['valid', 'b'], ['train', 'r']]
-	for i in range(3):
-		ax = axes[i]
-		for j in range(2):
-			final = np.round(data[data.columns[i+j*5]].iloc[-1], 3)
-			ax.plot(data['epoch'][10:], data[data.columns[i+j*5]][10:], 
-					label=subs[j][0]+' : '+str(final), c=subs[j][1], alpha=0.75)
-		ax.set_ylabel(labs[i])
-		ax.legend(loc='upper left')
-		ax.grid(ls=':')
-	
-	plt.xlabel('epoch')
-	plt.tight_layout(pad=1)
-	
-	if save: plt.savefig('NNs/'+name+'/train.png')
-	else: plt.show()
-	plt.clf()
+    epochs = data['epoch']
+    metrics = [[data['train_loss'], data['val_loss']],
+               [data['train_energy_MAE'], data['val_energy_MAE']],
+               [data['train_forces_MAE'], data['val_forces_MAE']]]
+    skip = int(0.05*len(epochs))
+    
+    fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
+    
+    labs = ['train', 'valid']
+    colors = ['b', 'g', 'r']
+    ylabs = ['loss', 'energy', 'forces']
+    for i in range(3):
+        ax = axes[i]
+        for j in range(2):
+            final = np.round(metrics[i][j].iloc[-1], 3)
+            ax.plot(epochs[skip:], metrics[i][j][skip:], color=colors[i], 
+                    alpha=0.5*(j+1), label=labs[j]+' : '+str(final))
+            ax.set_ylabel(ylabs[i])
+            ax.grid(ls=':')
+            ax.legend(loc='upper right')
+            ax.yaxis.set_major_formatter(format)
+    	plt.tight_layout(pad=1)
+    
+    if save: plt.savefig('NNs/'+name+'/train.png')
+    else: plt.show()
+    plt.clf()
 
 def barplot(name, measures, save=False):
 
