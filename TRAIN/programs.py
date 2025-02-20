@@ -384,8 +384,6 @@ def stoiPlots(Stois, name):
 	plt.savefig(name+'.png', dpi=200, bbox_inches='tight')
 	plt.clf()
 
-import matplotlib.ticker as ticker
-
 def trainplot(name, save=False):
 
     format = ticker.FormatStrFormatter('%.3f')
