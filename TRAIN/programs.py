@@ -337,6 +337,7 @@ def myTrainer(directory, epochs):
 	)
 	return trainer
 
+
 ###------------------------------------------
 ### PLOTTING FUNCTIONS
 ###------------------------------------------
@@ -384,38 +385,40 @@ def stoiPlots(Stois, name):
 	plt.savefig(name+'.png', dpi=200, bbox_inches='tight')
 	plt.clf()
 
+import matplotlib.ticker as ticker
+
 def trainplot(name, save=False):
 
-    format = ticker.FormatStrFormatter('%.3f')
+	format = ticker.FormatStrFormatter('%.3f')
 
-    data = read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
+	data = read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
 	data.fillna(method='ffill', inplace=True)
-    epochs = data['epoch']
-    metrics = [[data['train_loss'], data['val_loss']],
-               [data['train_energy_MAE'], data['val_energy_MAE']],
-               [data['train_forces_MAE'], data['val_forces_MAE']]]
-    skip = int(0.05*len(epochs))
-    
-    fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
-    
-    labs = ['train', 'valid']
-    colors = ['b', 'g', 'r']
-    ylabs = ['loss', 'energy', 'forces']
-    for i in range(3):
-        ax = axes[i]
-        for j in range(2):
-            final = np.round(metrics[i][j].iloc[-1], 3)
-            ax.plot(epochs[skip:], metrics[i][j][skip:], color=colors[i], 
-                    alpha=0.5*(j+1), label=labs[j]+' : '+str(final))
-            ax.set_ylabel(ylabs[i])
-            ax.grid(ls=':')
-            ax.legend(loc='upper right')
-            ax.yaxis.set_major_formatter(format)
-    	plt.tight_layout(pad=1)
-    
-    if save: plt.savefig('NNs/'+name+'/train.png')
-    else: plt.show()
-    plt.clf()
+	epochs = data['epoch']
+	metrics = [[data['train_loss'], data['val_loss']],
+			   [data['train_energy_MAE'], data['val_energy_MAE']],
+			   [data['train_forces_MAE'], data['val_forces_MAE']]]
+	skip = int(0.05*len(epochs))
+	
+	fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
+	
+	labs = ['train', 'valid']
+	colors = ['b', 'g', 'r']
+	ylabs = ['loss', 'energy', 'forces']
+	for i in range(3):
+		ax = axes[i]
+		for j in range(2):
+			final = np.round(metrics[i][j].iloc[-1], 3)
+			ax.plot(epochs[skip:], metrics[i][j][skip:], color=colors[i], 
+					alpha=0.5*(j+1), label=labs[j]+' : '+str(final))
+			ax.set_ylabel(ylabs[i])
+			ax.grid(ls=':')
+			ax.legend(loc='upper right')
+			ax.yaxis.set_major_formatter(format)
+		plt.tight_layout(pad=1)
+	
+	if save: plt.savefig('NNs/'+name+'/train.png')
+	else: plt.show()
+	plt.clf()
 
 def barplot(name, measures, save=False):
 
