@@ -1,149 +1,111 @@
 #!/usr/bin/env python3
-
-# Basic training with SchNetPack: https://schnetpack.readthedocs.io/en/latest/
-# All work is done in local programs.py file
-# Here we simply initialize, and train
-# Plotting functions are optional
-
-import sys, time, os
+import os
+import sys
+import time
+import argparse
 import numpy as np
-from ase.io import write
-from programs import *
-from ase.calculators.emt import EMT
-from ase.calculators.singlepoint import SinglePointCalculator
+import torch
+import pytorch_lightning as pl
 
-###------------------------------------------
-### INITIALIZE
-###------------------------------------------
+from programs import (
+	db2im, create_database, wait4db,
+	build_datamodule, myModel, myTrainer,
+	compare, ratioplot, deltaplot, histoplot, barplot, trainplot
+)
 
-name = sys.argv[1]
-path = sys.argv[2]
+# Now works on distributed (multi-node) systems.
+# num_workers may need optimization
+# hyperparameters do indeed need optimization
 
-print(name, path)
+def main():
 
-images = db2im(path)
+	name, path = sys.argv[1], sys.argv[2]
 
-# shuffle
-index = np.random.permutation(len(images))
-images = [images[i] for i in index]
+	# Initialize
+	images = db2im(str(path))
+	if len(images) == 0:
+		print('Empty database')
+		sys.exit(1)
+	
+	directory = os.path.join('./NNs', name)
+	os.makedirs(directory, exist_ok=True)
 
-# sort
-#index = np.argsort([i.get_total_energy() for i in images])
-#images = [images[i] for i in index[::-1]]
+	epochs = 100
+	batch_size = 32
+	cut_off = 5.2
 
-# rotate images randomly
-#images = [spin(i) for i in images]
-
-# filter images if need be
-#images = safe(images)
-
-print(len(images), 'images collected')
-
-directory = 'NNs/'+name+'/'
-try: os.mkdir(directory)
-except: pass
-
-#Hyperparameterization
-
-batch_size = 32
-epochs = 10
-
-parameters = {
-	'learning_rate': 1.0e-4,
-	'cut_off': 5.2,
-	'features': 50,
-	'interactions': 6,
-	'gaussians': 20,
-	'energy_weight': 0.1,
-	'force_weight': 0.9,
-}
-
-scheduler = {
-	's_class': torch.optim.lr_scheduler.ReduceLROnPlateau,
-	's_metric': 'val_loss',
-	's_args': {
-		'mode': 'min', 
-		'factor': 0.3, 
-		'patience': 20, 
-		'threshold': 1e-2, 
-		'threshold_mode': 'rel', 
-		'cooldown': 20, 
-		'min_lr': 0, 
-		'verbose': True,
+	parameters = {
+		'learning_rate': 1.0e-4,
+		'cut_off': cut_off,
+		'features': 50,
+		'interactions': 6,
+		'gaussians': 20,
+		'energy_weight': 0.1,
+		'force_weight': 0.9,
 	}
-}
 
-print('batch_size:', batch_size)
-print('epochs: ', epochs)
-print(parameters)
-print('s_args:', scheduler['s_args'])
+	scheduler = {
+		's_class': torch.optim.lr_scheduler.ReduceLROnPlateau,
+		's_metric': 'val_loss',
+		's_args': {
+			'mode': 'min', 
+			'factor': 0.3, 
+			'patience': 20, 
+			'threshold': 1e-2, 
+			'threshold_mode': 'rel', 
+			'cooldown': 20, 
+			'min_lr': 0, 
+		}
+	}
 
-dm = myModule(directory, images, batch_size)
-task = myModel(parameters, scheduler)
-trainer = myTrainer(directory, epochs)
+	# DATA CURATION
+	if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+		create_database(directory, images)
+	if torch.distributed.is_initialized():
+		torch.distributed.barrier()
+	db_file = os.path.join(directory, 'new_dataset.db')
 
-###------------------------------------------
-### TRAINING
-###------------------------------------------
+	wait4db(db_file, stability_time=10, check_interval=1, timeout=300)
 
-# load from checkpoint if needed
-#ckpt = 'NNs/ledge/lightning_logs/version_0/checkpoints/epoch=293-step=198744.ckpt'
+	rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+	print(f"[Rank {rank}] Database file found: {db_file}")
 
-t1 = time.time()
-#trainer.fit(task, datamodule=dm, ckpt_path=ckpt)
-trainer.fit(task, datamodule=dm)
-t2 = time.time()
+	# TRAINING
+	dm = build_datamodule(directory, images, batch_size, cut_off, prepare=False)
+	task = myModel(parameters, scheduler)
+	trainer = myTrainer(directory, epochs)
 
-minutes = round((t2-t1)/60,2)
-print('Training complete --', minutes, 'min')
+	t1 = time.time()
+	trainer.fit(task, datamodule=dm)
+	t2 = time.time()
 
-validation_loss = trainer.callback_metrics.get('val_loss')
-if validation_loss is None:
-	raise ValueError('Validation loss not found')
+	print('Training complete --', round((t2-t1)/60, 2), 'min')
 
-print(validation_loss.item())
-
-###------------------------------------------
-### PLOTTING
-###------------------------------------------
-
-limit = 10
-results = compare(directory, images, limit)
-MAEs = [results[0][4], results[0][5], 
+	# PLOTTING
+	limit = 10
+	results = compare(directory, images, limit)
+	MAEs = [
+		results[0][4], results[0][5], 
 		results[1][4], results[1][5], 
-		results[2][4], results[2][5]]
+		results[2][4], results[2][5]
+	]
+	testE = [results[2][0], results[2][1]]
+	testF = [results[2][2], results[2][3]]
 
-testE = [results[2][0], results[2][1]]
-testF = [results[2][2], results[2][3]]
+	print("MAEs:", MAEs)
+	np.save(os.path.join(directory, 'maes.npy'), MAEs)
 
-print(MAEs)
-save = True
-np.save(directory+'maes.npy', MAEs)
+	title = 'test'
+	ratioplot(name, 'energy', testE[0], testE[1], title, save=True)
+	ratioplot(name, 'force', testF[0], testF[1], title, save=True)
+	deltaplot(name, 'energy', testE[0], testE[1], title, save=True)
+	histoplot(name, 'energy', testE[0], testE[1], title, save=True)
+	histoplot(name, 'force', testF[0], testF[1], title, save=True)
+	barplot(name, MAEs, save=True)
+	trainplot(name, save=True)
 
-save = True
-title = 'test'
-
-ratioplot(name, 'energy', testE[0], testE[1], title, save)
-ratioplot(name, 'force', testF[0], testF[1], title, save)
-deltaplot(name, 'energy', testE[0], testE[1], title, save)
-histoplot(name, 'energy', testE[0], testE[1], title, save)
-histoplot(name, 'force', testF[0], testF[1], title, save)
-barplot(name, MAEs, save)
-trainplot(name, save)
-
-###------------------------------------------
-### OUTPUT
-###------------------------------------------
-
-"""
-
-T = '1910394746:AAHEppJQDdrdp8-0UYuCQk5DSgHXj1c26SA'
-I = '1925962595'
-from tqdm.contrib.telegram import tqdm
-for i in tqdm(range(0), desc='Training Done', token=T, chat_id=I): continue
-
-"""
+if __name__ == "__main__": main()
 
 ###------------------------------------------
-### DONE
-###------------------------------------------
+
+###/END
