@@ -67,8 +67,9 @@ Gamma
 runscript = """#!/usr/bin/env bash
 #SBATCH --account=akara
 #SBATCH --nodes=1
+#SBATCH --cpus-per-task=2
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=15:00:00
+#SBATCH --time=10:00:00
 #SBATCH --mem-per-cpu=8000
 #SBATCH --exclude=ec[1-50]
 #SBATCH --error=%J.err
