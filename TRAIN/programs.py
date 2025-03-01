@@ -257,7 +257,7 @@ def build_datamodule(directory, images, bs, co, prepare=True):
 			spk.transform.RemoveOffsets('energy', remove_mean=True, remove_atomrefs=False),
 			spk.transform.CastTo32()
 		],
-		num_workers=2, #may require manual adjustment
+		num_workers=4, #may require manual adjustment
 		pin_memory=True if torch.cuda.is_available() else False,
 	)
 	if prepare: DM.prepare_data()
@@ -290,7 +290,7 @@ def myModel(parameters, scheduler):
 	
 	output_energy = spk.task.ModelOutput(
 		name='energy',
-		loss_fn=torch.nn.MSELoss(),
+		loss_fn=torch.nn.HuberLoss(),
 		loss_weight=parameters['energy_weight'],
 		metrics={"MAE": torchmetrics.MeanAbsoluteError()}
 	)
@@ -313,6 +313,7 @@ def myModel(parameters, scheduler):
 	return task
 
 def myTrainer(directory, epochs):
+
 	csv_logger = pl.loggers.CSVLogger(save_dir=directory, name='csv_logs')
 	callbacks = [
 		spk.train.ModelCheckpoint(
@@ -320,13 +321,13 @@ def myTrainer(directory, epochs):
 			save_top_k=5,
 			monitor='val_loss'
 		),
-		pl.callbacks.EarlyStopping(monitor='val_loss', patience=200),
+		pl.callbacks.EarlyStopping(monitor='val_loss', patience=100),
 	]
 
 	trainer = pl.Trainer(
 		accelerator='gpu' if torch.cuda.is_available() else 'cpu',
-		devices=torch.cuda.device_count(),
-		num_nodes=int(os.getenv("SLURM_NNODES", 2)),
+		devices=1, #torch.cuda.device_count(),
+		num_nodes=int(os.getenv("SLURM_NNODES", 1)),
 		strategy='ddp',
 		precision=16,
 		callbacks=callbacks,
