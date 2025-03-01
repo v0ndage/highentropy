@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+
+# made to train large datasets after optimization
+
 import os
 import sys
 import time
-import argparse
 import numpy as np
 import torch
 import pytorch_lightning as pl
@@ -13,16 +15,11 @@ from programs import (
 	compare, ratioplot, deltaplot, histoplot, barplot, trainplot
 )
 
-# Now works on distributed (multi-node) systems.
-# num_workers may need optimization
-# hyperparameters do indeed need optimization
-
 def main():
 
-	name, path = sys.argv[1], sys.argv[2]
+	name, db_path = sys.argv[1], sys.argv[2]
 
-	# Initialize
-	images = db2im(str(path))
+	images = db2im(str(db_path))
 	if len(images) == 0:
 		print('Empty database')
 		sys.exit(1)
@@ -30,18 +27,18 @@ def main():
 	directory = os.path.join('./NNs', name)
 	os.makedirs(directory, exist_ok=True)
 
-	epochs = 100
-	batch_size = 32
+	epochs = 500
+	batch_size = 64
 	cut_off = 5.2
 
 	parameters = {
-		'learning_rate': 1.0e-4,
+		'learning_rate': 1.0e-3,
 		'cut_off': cut_off,
-		'features': 50,
+		'features': 400,
 		'interactions': 6,
-		'gaussians': 20,
-		'energy_weight': 0.1,
-		'force_weight': 0.9,
+		'gaussians': 50,
+		'energy_weight': 0.25,
+		'force_weight': 0.75,
 	}
 
 	scheduler = {
@@ -50,10 +47,10 @@ def main():
 		's_args': {
 			'mode': 'min', 
 			'factor': 0.3, 
-			'patience': 20, 
+			'patience': 10, 
 			'threshold': 1e-2, 
 			'threshold_mode': 'rel', 
-			'cooldown': 20, 
+			'cooldown': 10, 
 			'min_lr': 0, 
 		}
 	}
@@ -61,12 +58,13 @@ def main():
 	# DATA CURATION
 	if int(os.environ.get("LOCAL_RANK", 0)) == 0:
 		create_database(directory, images)
+
+	# Barrier to ensure database creation is complete
 	if torch.distributed.is_initialized():
 		torch.distributed.barrier()
+
 	db_file = os.path.join(directory, 'new_dataset.db')
-
-	wait4db(db_file, stability_time=10, check_interval=1, timeout=300)
-
+	wait4db(db_file, stability_time=10, check_interval=1, timeout=10*60)
 	rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
 	print(f"[Rank {rank}] Database file found: {db_file}")
 
