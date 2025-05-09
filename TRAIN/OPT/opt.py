@@ -99,7 +99,7 @@ study = optuna.create_study(
 	pruner=pruner,
 	sampler=optuna.samplers.TPESampler(seed=42))
 
-study.optimize(objective, n_trials=100)
+study.optimize(objective, n_trials=10)
 print('best params:', study.best_params)
 
 # Train final model with best parameters
