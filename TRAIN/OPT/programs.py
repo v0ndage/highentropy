@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
-# Meant for optuna training on single node
-
 import os, time
 import torch, torchmetrics
 import schnetpack as spk
 import pytorch_lightning as pl
 from schnetpack.data import ASEAtomsData, AtomsDataModule
+
+import numpy as np
+from pandas import read_csv
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 import numpy as np
 from ase.db import connect
@@ -104,10 +107,10 @@ def myModule(directory, images, bs):
 	DM = AtomsDataModule(
 		path,
 		split_file = os.path.join(directory, 'split.npz'),
-		batch_size=bs, val_batch_size=bs, test_batch_size=bs,
-		num_train=int(0.7*len(images)), 
-		num_val=int(0.15*len(images)), 
-		num_test=int(0.15*len(images)),
+		batch_size=bs, val_batch_size=bs, test_batch_size=0,
+		num_train=int(0.8*len(images)), 
+		num_val=int(0.2*len(images)), 
+		num_test=0,
 		load_properties = ['energy', 'forces'],
 		transforms=[
 			spk.transform.ASENeighborList(cutoff=5.2),
@@ -161,14 +164,14 @@ def myModel(parameters, scheduler):
 	#Define loss weights for features
 	output_energy = spk.task.ModelOutput(
 		name='energy',
-		loss_fn=torch.nn.HuberLoss(delta=0.1),
+		loss_fn=torch.nn.HuberLoss(delta=0.075),
 		loss_weight=e_weight,
 		metrics={"MAE": torchmetrics.MeanAbsoluteError()}
 	)
 	
 	output_forces = spk.task.ModelOutput(
 		name='forces',
-		loss_fn=torch.nn.MSELoss(),
+		loss_fn=torch.nn.HuberLoss(delta=0.05),
 		loss_weight=f_weight,
 		metrics={"MAE": torchmetrics.MeanAbsoluteError()}
 	)
@@ -178,7 +181,7 @@ def myModel(parameters, scheduler):
 		model=nnpot,
 		outputs=[output_energy, output_forces],
 		optimizer_cls=torch.optim.AdamW,
-		optimizer_args={'lr': lr},
+                optimizer_args={'lr': lr},
 		scheduler_cls=scheduler['s_class'],
 		scheduler_monitor=scheduler['s_metric'],
 		scheduler_args=scheduler['s_args'],
@@ -186,32 +189,70 @@ def myModel(parameters, scheduler):
 
 	return task
 
-def myTrainer(directory, epochs, trial):
+
+def myTrainer(directory, epochs):
 	
 	#Assign logs
-	logger = pl.loggers.TensorBoardLogger(save_dir=directory)
+	tensor_logger = pl.loggers.TensorBoardLogger(save_dir=directory)
 	callbacks = [
 		spk.train.ModelCheckpoint(
-			model_path=os.path.join(directory, 'net-'+str(trial)),
+			model_path=os.path.join(directory, 'best_inference_model'),
 			save_top_k=1,
 			monitor='val_loss'
 		),
-		pl.callbacks.EarlyStopping(monitor='val_loss', patience=30, verbose=True),
+		pl.callbacks.LearningRateMonitor(logging_interval='epoch'),
+		pl.callbacks.EarlyStopping(monitor='val_loss', patience=50, verbose=True)
 	]
 
 	#Define trainer
 	trainer = pl.Trainer(
 		devices = 1,
 		accelerator = 'gpu',
-		strategy = 'ddp',
+		strategy = 'auto',
 		precision = '16-mixed',
 		callbacks=callbacks,
-		logger=logger,
+		logger=tensor_logger,
 		log_every_n_steps=10,
 		default_root_dir=directory,
 		max_epochs=epochs,
 	)
 	
 	return trainer
+
+##Plotting function
+
+def trainplot(name, save=False):
+
+	format = ticker.FormatStrFormatter('%.3f')
+
+	data = read_csv('NNs/'+name+'/csv_logs/version_0/metrics.csv')
+	data.fillna(method='ffill', inplace=True)
+	epochs = data['epoch']
+	metrics = [[data['train_loss'], data['val_loss']],
+			   [data['train_energy_MAE'], data['val_energy_MAE']],
+			   [data['train_forces_MAE'], data['val_forces_MAE']]]
+	skip = int(0.05*len(epochs))
+	
+	fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
+	
+	labs = ['train', 'valid']
+	colors = ['b', 'g', 'r']
+	ylabs = ['loss', 'energy', 'forces']
+	for i in range(3):
+		ax = axes[i]
+		for j in range(2):
+			final = np.round(metrics[i][j].iloc[-1], 3)
+			ax.plot(epochs[skip:], metrics[i][j][skip:], color=colors[i], 
+					alpha=0.5*(j+1), label=labs[j]+' : '+str(final))
+			ax.set_ylabel(ylabs[i])
+			ax.grid(ls=':')
+			ax.legend(loc='upper right')
+			ax.yaxis.set_major_formatter(format)
+		plt.tight_layout(pad=1)
+	
+	if save: plt.savefig('NNs/'+name+'/train.png')
+	else: plt.show()
+	plt.clf()
+
 
 ####/END
